@@ -1,0 +1,25 @@
+<script>
+function getQueryParam(param){
+    return new URLSearchParams(window.location.search).get(param);
+}
+
+const imageId = getQueryParam('id');
+
+if(imageId){
+
+    const driveUrl = "https://lh3.googleusercontent.com/d/" + imageId;
+
+    pannellum.viewer('panorama',{
+        type:"equirectangular",
+        panorama: driveUrl,
+        autoLoad:true,
+        compass:true,
+        showZoomCtrl:false,
+        mouseZoom:false,
+        keyboardZoom:false
+    });
+
+}else{
+    document.getElementById('message').innerHTML="ไม่พบ id รูป";
+}
+</script>
