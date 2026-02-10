@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>360° Image Viewer - AppSheet</title>
     
-    <!-- Photo Sphere Viewer CSS -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core/index.css"/>
+    <!-- Pannellum CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css"/>
     
     <style>
         * {
@@ -17,11 +17,11 @@
         
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #000;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             overflow: hidden;
         }
         
-        #viewer {
+        #panorama {
             width: 100vw;
             height: 100vh;
         }
@@ -32,13 +32,13 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.95);
+            background: rgba(0, 0, 0, 0.9);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             z-index: 9999;
-            transition: opacity 0.5s;
+            transition: opacity 0.3s;
         }
         
         .loading-overlay.hidden {
@@ -78,7 +78,6 @@
             text-align: center;
             max-width: 500px;
             display: none;
-            z-index: 10000;
         }
         
         .error-message.show {
@@ -92,31 +91,14 @@
         
         .error-message p {
             color: #555;
-            line-height: 1.8;
-            margin-bottom: 15px;
-            text-align: left;
-        }
-        
-        .retry-button {
-            background: #3498db;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-            margin-top: 10px;
-        }
-        
-        .retry-button:hover {
-            background: #2980b9;
+            line-height: 1.6;
         }
         
         .info-panel {
             position: fixed;
             top: 20px;
             left: 20px;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.7);
             color: white;
             padding: 15px 20px;
             border-radius: 8px;
@@ -135,12 +117,29 @@
             opacity: 0.9;
         }
         
-        .url-list {
-            font-size: 11px;
-            color: #aaa;
-            margin-top: 10px;
-            max-width: 300px;
-            word-break: break-all;
+        .controls-help {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 12px;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+        }
+        
+        .controls-help h4 {
+            margin-bottom: 8px;
+        }
+        
+        .controls-help ul {
+            list-style: none;
+        }
+        
+        .controls-help li {
+            margin: 3px 0;
         }
     </style>
 </head>
@@ -153,60 +152,43 @@
     <div class="error-message" id="errorMessage">
         <h2>⚠️ เกิดข้อผิดพลาด</h2>
         <p id="errorText"></p>
-        <button class="retry-button" onclick="location.reload()">ลองใหม่</button>
     </div>
     
     <div class="info-panel" id="infoPanel" style="display: none;">
         <h3>📷 ข้อมูลภาพ</h3>
         <p>Image ID: <span id="imageIdDisplay"></span></p>
-        <p>วิธีการโหลด: <span id="methodDisplay" style="color: #2ecc71;">สำเร็จ ✓</span></p>
-        <div class="url-list" id="urlList"></div>
     </div>
     
-    <div id="viewer"></div>
+    <div class="controls-help">
+        <h4>🎮 วิธีใช้งาน</h4>
+        <ul>
+            <li>🖱️ ลาก: หมุนภาพ</li>
+            <li>🔍 Scroll: ซูมเข้า/ออก</li>
+            <li>📱 สัมผัส: ปัดเพื่อหมุน</li>
+        </ul>
+    </div>
     
-    <!-- Photo Sphere Viewer JS -->
-    <script src="https://cdn.jsdelivr.net/npm/three/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core/index.js"></script>
+    <div id="panorama"></div>
+    
+    <!-- Pannellum JS -->
+    <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
     
     <script>
-        const { Viewer } = window.PhotoSphereViewer;
-        
-        // ดึง Image ID จาก URL
+        // ดึง Image ID จาก URL parameter
         function getImageIdFromUrl() {
             const urlParams = new URLSearchParams(window.location.search);
             return urlParams.get('id');
         }
         
-        // สร้าง URL หลายแบบสำหรับทดสอบ
-        function getImageUrls(fileId) {
-            return [
-                {
-                    url: `https://drive.google.com/thumbnail?id=${fileId}&sz=w4000`,
-                    name: 'Thumbnail API (4000px)',
-                    cors: 'anonymous'
-                },
-                {
-                    url: `https://drive.google.com/thumbnail?id=${fileId}&sz=w2000`,
-                    name: 'Thumbnail API (2000px)',
-                    cors: 'anonymous'
-                },
-                {
-                    url: `https://lh3.googleusercontent.com/d/${fileId}=w4000`,
-                    name: 'Googleusercontent',
-                    cors: 'anonymous'
-                },
-                {
-                    url: `https://drive.google.com/thumbnail?id=${fileId}&sz=w4000`,
-                    name: 'Direct Download',
-                    cors: 'use-credentials'
-                }
-            ];
+        // แปลง File ID เป็น Direct Image URL
+        // ใช้ Thumbnail API ที่ทดสอบแล้วว่าใช้งานได้
+        function getDirectImageUrl(fileId) {
+            return `https://drive.google.com/thumbnail?id=${fileId}&sz=w4000`;
         }
         
         // แสดง Error
         function showError(message) {
-            document.getElementById('errorText').innerHTML = message;
+            document.getElementById('errorText').textContent = message;
             document.getElementById('errorMessage').classList.add('show');
             document.getElementById('loadingOverlay').classList.add('hidden');
         }
@@ -216,145 +198,76 @@
             document.getElementById('loadingOverlay').classList.add('hidden');
         }
         
-        // แสดง Info
-        function showInfo(imageId, method, urls) {
+        // แสดง Info Panel
+        function showInfoPanel(imageId) {
             document.getElementById('imageIdDisplay').textContent = imageId;
-            document.getElementById('methodDisplay').textContent = method;
-            document.getElementById('urlList').innerHTML = 
-                '<strong>URLs ที่ทดสอบ:</strong><br>' + 
-                urls.map((u, i) => `${i+1}. ${u.name}`).join('<br>');
             document.getElementById('infoPanel').style.display = 'block';
         }
         
-        // ลองโหลดภาพ
-        async function tryLoadImage(urls) {
-            for (let i = 0; i < urls.length; i++) {
-                const method = urls[i];
-                console.log(`🔍 ลอง: ${method.name} - ${method.url}`);
-                
-                try {
-                    const response = await fetch(method.url, {
-                        method: 'HEAD',
-                        mode: 'no-cors' // ไม่ตรวจสอบ CORS ใน HEAD request
-                    });
-                    
-                    // ถ้าไม่ error ให้ลองใช้ URL นี้
-                    return method;
-                    
-                } catch (error) {
-                    console.log(`❌ ล้มเหลว: ${method.name}`);
-                }
-            }
-            
-            // ถ้าทุกอันล้มเหลว ให้ใช้อันแรก (Thumbnail API มักใช้ได้)
-            return urls[0];
-        }
-        
-        // สร้าง Viewer
-        async function createViewer(imageUrl, corsMode = 'anonymous') {
-            try {
-                const viewer = new Viewer({
-                    container: document.getElementById('viewer'),
-                    panorama: imageUrl,
-                    
-                    // การตั้งค่า
-                    navbar: [
-                        'autorotate',
-                        'zoom',
-                        'fullscreen'
-                    ],
-                    
-                    defaultZoomLvl: 50,
-                    fisheye: false,
-                    
-                    // Auto rotate
-                    autorotateDelay: 2000,
-                    autorotateSpeed: '2rpm',
-                    
-                    // Mobile
-                    touchmoveTwoFingers: false,
-                    mousemove: true,
-                    
-                    // Gyroscope
-                    moveInertia: true,
-                    
-                    // CORS
-                    requestHeaders: corsMode === 'use-credentials' ? {
-                        'credentials': 'include'
-                    } : {},
-                    
-                    // Plugins
-                    loadingImg: null,
-                    loadingTxt: 'กำลังโหลด...',
-                    
-                    // Error handling
-                    onReady: () => {
-                        console.log('✅ Viewer พร้อมใช้งาน');
-                        hideLoading();
-                    }
-                });
-                
-                viewer.addEventListener('ready', () => {
-                    console.log('✅ โหลดภาพสำเร็จ');
-                    hideLoading();
-                });
-                
-                return viewer;
-                
-            } catch (error) {
-                console.error('❌ Error:', error);
-                throw error;
-            }
-        }
-        
-        // เริ่มต้น
-        async function init() {
+        // เริ่มต้น 360° Viewer
+        function init360Viewer() {
             const imageId = getImageIdFromUrl();
             
             if (!imageId) {
-                showError(`
-                    <strong>ไม่พบ Image ID</strong><br><br>
-                    กรุณาเพิ่ม ?id=YOUR_IMAGE_ID ใน URL<br><br>
-                    <strong>ตัวอย่าง:</strong><br>
-                    https://yoursite.github.io/?id=1ABC123XYZ
-                `);
+                showError('ไม่พบ Image ID กรุณาระบุ ?id=YOUR_IMAGE_ID ใน URL');
                 return;
             }
             
+            showInfoPanel(imageId);
+            const imageUrl = getDirectImageUrl(imageId);
+            
             console.log('🎯 Image ID:', imageId);
+            console.log('📍 Image URL:', imageUrl);
             
-            const urls = getImageUrls(imageId);
+            // สร้าง Pannellum viewer
+            const viewer = pannellum.viewer('panorama', {
+                "type": "equirectangular",
+                "panorama": imageUrl,
+                "autoLoad": true,
+                "autoRotate": -2,
+                "showControls": true,
+                "showFullscreenCtrl": true,
+                "showZoomCtrl": true,
+                "mouseZoom": true,
+                "compass": true,
+                "orientationOnByDefault": true,
+                "draggable": true,
+                "disableKeyboardCtrl": false,
+                "pitch": 0,
+                "yaw": 0,
+                "hfov": 100,
+                "minHfov": 50,
+                "maxHfov": 120,
+                "strings": {
+                    "loadButtonLabel": "คลิกเพื่อโหลดภาพ",
+                    "loadingLabel": "กำลังโหลด...",
+                    "bylineLabel": "โดย %s",
+                    "noPanoramaError": "ไม่พบภาพ 360°",
+                    "fileAccessError": "ไม่สามารถเข้าถึงไฟล์ได้",
+                    "malformedURLError": "URL ไม่ถูกต้อง",
+                    "iOS8WebGLError": "เบราว์เซอร์ไม่รองรับ WebGL",
+                    "genericWebGLError": "ไม่สามารถใช้งาน WebGL ได้",
+                    "textureSizeError": "ขนาดภาพใหญ่เกินไป"
+                }
+            });
             
-            try {
-                // หาวิธีที่ดีที่สุด
-                const bestMethod = await tryLoadImage(urls);
-                console.log(`✅ ใช้: ${bestMethod.name}`);
-                
-                showInfo(imageId, bestMethod.name, urls);
-                
-                // สร้าง Viewer
-                await createViewer(bestMethod.url, bestMethod.cors);
-                
-            } catch (error) {
-                console.error('❌ ข้อผิดพลาด:', error);
-                showError(`
-                    <strong>ไม่สามารถโหลดภาพได้</strong><br><br>
-                    <strong>กรุณาตรวจสอบ:</strong><br>
-                    1. Image ID ถูกต้อง: <code>${imageId}</code><br>
-                    2. ไฟล์ใน Google Drive แชร์เป็น "Anyone with the link"<br>
-                    3. ไฟล์เป็นภาพ 360° (Equirectangular)<br><br>
-                    <strong>ลองเปิด URL เหล่านี้:</strong><br>
-                    ${urls.map((u, i) => `
-                        ${i+1}. <a href="${u.url}" target="_blank">${u.name}</a><br>
-                    `).join('')}
-                    <br>
-                    <strong>Error:</strong> ${error.message}
-                `);
-            }
+            // Event: เมื่อโหลดเสร็จ
+            viewer.on('load', function() {
+                hideLoading();
+                console.log('✅ โหลดภาพ 360° สำเร็จ');
+            });
+            
+            // Event: เมื่อเกิด error
+            viewer.on('error', function(err) {
+                showError('ไม่สามารถโหลดภาพได้ กรุณาตรวจสอบ:\n1. Image ID ถูกต้อง\n2. ไฟล์เป็นภาพ 360° (Equirectangular)\n3. การแชร์ไฟล์เป็น "Anyone with the link"');
+                console.error('❌ Error:', err);
+            });
         }
         
-        // รันเมื่อโหลดหน้าเสร็จ
-        window.addEventListener('load', init);
+        // รันเมื่อโหลดหน้าเว็บเสร็จ
+        window.addEventListener('load', function() {
+            init360Viewer();
+        });
     </script>
 </body>
 </html>
