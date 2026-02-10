@@ -1,1 +1,383 @@
-123
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>360° Image Viewer - AppSheet</title>
+    
+    <!-- A-Frame -->
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.5s;
+        }
+        
+        .loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #fff;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            color: white;
+            margin-top: 20px;
+            font-size: 18px;
+        }
+        
+        .error-message {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
+            max-width: 600px;
+            display: none;
+            z-index: 10000;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        .error-message h2 {
+            color: #e74c3c;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        
+        .error-message p {
+            color: #555;
+            line-height: 1.8;
+            margin-bottom: 15px;
+        }
+        
+        .error-message code {
+            background: #f5f5f5;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: #e74c3c;
+            font-size: 14px;
+        }
+        
+        .test-links {
+            margin-top: 20px;
+            text-align: left;
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        
+        .test-links h3 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        
+        .test-links a {
+            display: block;
+            margin: 8px 0;
+            color: #3498db;
+            text-decoration: none;
+            font-size: 13px;
+        }
+        
+        .test-links a:hover {
+            text-decoration: underline;
+        }
+        
+        .retry-button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 15px;
+        }
+        
+        .retry-button:hover {
+            background: #2980b9;
+        }
+        
+        .info-panel {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+        }
+        
+        .info-panel h3 {
+            margin-bottom: 10px;
+            font-size: 16px;
+            color: #3498db;
+        }
+        
+        .info-panel p {
+            margin: 5px 0;
+            opacity: 0.9;
+        }
+        
+        .controls-help {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+        }
+        
+        .controls-help h4 {
+            margin-bottom: 10px;
+            color: #3498db;
+        }
+        
+        .controls-help ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .controls-help li {
+            margin: 5px 0;
+        }
+        
+        a-scene {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text">กำลังโหลดภาพ 360°...</div>
+    </div>
+    
+    <div class="error-message" id="errorMessage">
+        <h2>⚠️ เกิดข้อผิดพลาด</h2>
+        <p id="errorText"></p>
+        <div id="testLinks"></div>
+        <button class="retry-button" onclick="location.reload()">ลองใหม่</button>
+    </div>
+    
+    <div class="info-panel" id="infoPanel" style="display: none;">
+        <h3>📷 ข้อมูลภาพ 360°</h3>
+        <p>Image ID: <span id="imageIdDisplay"></span></p>
+        <p style="color: #2ecc71;">✓ โหลดสำเร็จ</p>
+    </div>
+    
+    <div class="controls-help">
+        <h4>🎮 วิธีใช้งาน</h4>
+        <ul>
+            <li>🖱️ ลากเมาส์ - หมุนภาพ</li>
+            <li>🔍 WASD - เคลื่อนที่</li>
+            <li>📱 ปัดนิ้ว - หมุนภาพบนมือถือ</li>
+            <li>🧭 เอียงมือถือ - ใช้ Gyroscope</li>
+        </ul>
+    </div>
+    
+    <a-scene id="scene" loading-screen="enabled: false">
+        <a-sky id="panorama" rotation="0 -130 0"></a-sky>
+        <a-camera>
+            <a-cursor></a-cursor>
+        </a-camera>
+    </a-scene>
+    
+    <script>
+        function getImageIdFromUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('id');
+        }
+        
+        function getImageUrls(fileId) {
+            return [
+                {
+                    url: `https://drive.google.com/thumbnail?id=${fileId}&sz=w4000`,
+                    name: 'Thumbnail API (4000px)'
+                },
+                {
+                    url: `https://drive.google.com/thumbnail?id=${fileId}&sz=w2048`,
+                    name: 'Thumbnail API (2048px)'
+                },
+                {
+                    url: `https://lh3.googleusercontent.com/d/${fileId}=w4000`,
+                    name: 'Googleusercontent'
+                }
+            ];
+        }
+        
+        function showError(message, imageId = null) {
+            document.getElementById('errorText').innerHTML = message;
+            
+            if (imageId) {
+                const urls = getImageUrls(imageId);
+                const linksHTML = `
+                    <div class="test-links">
+                        <h3>🔗 ลองเปิด URLs เหล่านี้ดู:</h3>
+                        ${urls.map((u, i) => 
+                            `<a href="${u.url}" target="_blank">${i+1}. ${u.name}</a>`
+                        ).join('')}
+                    </div>
+                `;
+                document.getElementById('testLinks').innerHTML = linksHTML;
+            }
+            
+            document.getElementById('errorMessage').classList.add('show');
+            document.getElementById('loadingOverlay').classList.add('hidden');
+        }
+        
+        function hideLoading() {
+            setTimeout(() => {
+                document.getElementById('loadingOverlay').classList.add('hidden');
+            }, 2000);
+        }
+        
+        function showInfoPanel(imageId) {
+            document.getElementById('imageIdDisplay').textContent = imageId;
+            document.getElementById('infoPanel').style.display = 'block';
+        }
+        
+        async function testImageUrl(url) {
+            try {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                
+                return new Promise((resolve) => {
+                    const timeout = setTimeout(() => resolve(false), 5000);
+                    
+                    img.onload = () => {
+                        clearTimeout(timeout);
+                        resolve(true);
+                    };
+                    
+                    img.onerror = () => {
+                        clearTimeout(timeout);
+                        resolve(false);
+                    };
+                    
+                    img.src = url;
+                });
+            } catch {
+                return false;
+            }
+        }
+        
+        async function findWorkingUrl(imageId) {
+            const urls = getImageUrls(imageId);
+            
+            for (const method of urls) {
+                console.log(`🔍 กำลังทดสอบ: ${method.name}`);
+                const works = await testImageUrl(method.url);
+                
+                if (works) {
+                    console.log(`✅ ใช้งานได้: ${method.name}`);
+                    return method.url;
+                }
+                
+                console.log(`❌ ไม่สามารถใช้: ${method.name}`);
+            }
+            
+            // ถ้าไม่มีอันไหนผ่านการทดสอบ ก็ใช้อันแรก (มีโอกาสทำงานได้ด้วย A-Frame)
+            console.log('⚠️ ไม่พบ URL ที่ทดสอบผ่าน, ลองใช้ Thumbnail API');
+            return urls[0].url;
+        }
+        
+        async function init() {
+            const imageId = getImageIdFromUrl();
+            
+            if (!imageId) {
+                showError(`
+                    กรุณาเพิ่ม <code>?id=YOUR_IMAGE_ID</code> ใน URL<br><br>
+                    <strong>ตัวอย่าง:</strong><br>
+                    <code>https://yoursite.github.io/?id=1ABC123XYZ</code>
+                `);
+                return;
+            }
+            
+            console.log('🎯 Image ID:', imageId);
+            showInfoPanel(imageId);
+            
+            try {
+                // หา URL ที่ใช้งานได้
+                const imageUrl = await findWorkingUrl(imageId);
+                console.log('📍 ใช้ URL:', imageUrl);
+                
+                // โหลดภาพใน A-Frame
+                const sky = document.getElementById('panorama');
+                sky.setAttribute('src', imageUrl);
+                
+                // ซ่อน loading
+                hideLoading();
+                
+                // ตรวจสอบว่าโหลดสำเร็จหรือไม่
+                setTimeout(() => {
+                    const texture = sky.components.material.material.map;
+                    if (!texture || !texture.image || !texture.image.complete) {
+                        console.warn('⚠️ อาจมีปัญหาการโหลดภาพ');
+                    }
+                }, 3000);
+                
+            } catch (error) {
+                console.error('❌ Error:', error);
+                showError(`
+                    ไม่สามารถโหลดภาพได้<br><br>
+                    <strong>กรุณาตรวจสอบ:</strong><br>
+                    1. Image ID ถูกต้อง: <code>${imageId}</code><br>
+                    2. ไฟล์แชร์เป็น "Anyone with the link"<br>
+                    3. ไฟล์เป็นภาพ 360° (Equirectangular)<br><br>
+                    <strong>Error:</strong> ${error.message}
+                `, imageId);
+            }
+        }
+        
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
