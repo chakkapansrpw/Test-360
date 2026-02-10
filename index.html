@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>360° Image Viewer - AppSheet</title>
     
-    <!-- Pannellum CSS -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css"/>
+    <!-- Photo Sphere Viewer CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core/index.css"/>
     
     <style>
         * {
@@ -17,11 +17,11 @@
         
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #000;
             overflow: hidden;
         }
         
-        #panorama {
+        #viewer {
             width: 100vw;
             height: 100vh;
         }
@@ -32,13 +32,13 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.9);
+            background: rgba(0, 0, 0, 0.95);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             z-index: 9999;
-            transition: opacity 0.3s;
+            transition: opacity 0.5s;
         }
         
         .loading-overlay.hidden {
@@ -64,28 +64,6 @@
             color: white;
             margin-top: 20px;
             font-size: 18px;
-        }
-        
-        .loading-status {
-            color: rgba(255, 255, 255, 0.7);
-            margin-top: 10px;
-            font-size: 14px;
-        }
-        
-        .progress-bar {
-            width: 300px;
-            height: 4px;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 2px;
-            margin-top: 20px;
-            overflow: hidden;
-        }
-        
-        .progress-fill {
-            height: 100%;
-            background: #fff;
-            width: 0%;
-            transition: width 0.3s;
         }
         
         .error-message {
@@ -114,15 +92,16 @@
         
         .error-message p {
             color: #555;
-            line-height: 1.6;
+            line-height: 1.8;
             margin-bottom: 15px;
+            text-align: left;
         }
         
         .retry-button {
             background: #3498db;
             color: white;
             border: none;
-            padding: 10px 20px;
+            padding: 12px 24px;
             border-radius: 5px;
             cursor: pointer;
             font-size: 14px;
@@ -137,7 +116,7 @@
             position: fixed;
             top: 20px;
             left: 20px;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.8);
             color: white;
             padding: 15px 20px;
             border-radius: 8px;
@@ -156,29 +135,12 @@
             opacity: 0.9;
         }
         
-        .controls-help {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 15px;
-            border-radius: 8px;
-            font-size: 12px;
-            z-index: 1000;
-            backdrop-filter: blur(10px);
-        }
-        
-        .controls-help h4 {
-            margin-bottom: 8px;
-        }
-        
-        .controls-help ul {
-            list-style: none;
-        }
-        
-        .controls-help li {
-            margin: 3px 0;
+        .url-list {
+            font-size: 11px;
+            color: #aaa;
+            margin-top: 10px;
+            max-width: 300px;
+            word-break: break-all;
         }
     </style>
 </head>
@@ -186,10 +148,6 @@
     <div class="loading-overlay" id="loadingOverlay">
         <div class="spinner"></div>
         <div class="loading-text">กำลังโหลดภาพ 360°...</div>
-        <div class="loading-status" id="loadingStatus">กำลังเตรียมข้อมูล...</div>
-        <div class="progress-bar">
-            <div class="progress-fill" id="progressFill"></div>
-        </div>
     </div>
     
     <div class="error-message" id="errorMessage">
@@ -201,42 +159,54 @@
     <div class="info-panel" id="infoPanel" style="display: none;">
         <h3>📷 ข้อมูลภาพ</h3>
         <p>Image ID: <span id="imageIdDisplay"></span></p>
-        <p>สถานะ: <span style="color: #2ecc71;">โหลดสำเร็จ ✓</span></p>
+        <p>วิธีการโหลด: <span id="methodDisplay" style="color: #2ecc71;">สำเร็จ ✓</span></p>
+        <div class="url-list" id="urlList"></div>
     </div>
     
-    <div class="controls-help">
-        <h4>🎮 วิธีใช้งาน</h4>
-        <ul>
-            <li>🖱️ ลาก: หมุนภาพ</li>
-            <li>🔍 Scroll: ซูมเข้า/ออก</li>
-            <li>📱 สัมผัส: ปัดเพื่อหมุน</li>
-            <li>⛶ กดเพื่อ Fullscreen</li>
-        </ul>
-    </div>
+    <div id="viewer"></div>
     
-    <div id="panorama"></div>
-    
-    <!-- Pannellum JS -->
-    <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+    <!-- Photo Sphere Viewer JS -->
+    <script src="https://cdn.jsdelivr.net/npm/three/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core/index.js"></script>
     
     <script>
-        // ดึง Image ID จาก URL parameter
+        const { Viewer } = window.PhotoSphereViewer;
+        
+        // ดึง Image ID จาก URL
         function getImageIdFromUrl() {
             const urlParams = new URLSearchParams(window.location.search);
             return urlParams.get('id');
         }
         
-        // อัพเดทสถานะการโหลด
-        function updateLoadingStatus(message, progress = null) {
-            document.getElementById('loadingStatus').textContent = message;
-            if (progress !== null) {
-                document.getElementById('progressFill').style.width = progress + '%';
-            }
+        // สร้าง URL หลายแบบสำหรับทดสอบ
+        function getImageUrls(fileId) {
+            return [
+                {
+                    url: `https://drive.google.com/thumbnail?id=${fileId}&sz=w4000`,
+                    name: 'Thumbnail API (4000px)',
+                    cors: 'anonymous'
+                },
+                {
+                    url: `https://drive.google.com/thumbnail?id=${fileId}&sz=w2000`,
+                    name: 'Thumbnail API (2000px)',
+                    cors: 'anonymous'
+                },
+                {
+                    url: `https://lh3.googleusercontent.com/d/${fileId}=w4000`,
+                    name: 'Googleusercontent',
+                    cors: 'anonymous'
+                },
+                {
+                    url: `https://drive.google.com/uc?export=download&id=${fileId}`,
+                    name: 'Direct Download',
+                    cors: 'use-credentials'
+                }
+            ];
         }
         
         // แสดง Error
         function showError(message) {
-            document.getElementById('errorText').textContent = message;
+            document.getElementById('errorText').innerHTML = message;
             document.getElementById('errorMessage').classList.add('show');
             document.getElementById('loadingOverlay').classList.add('hidden');
         }
@@ -246,152 +216,145 @@
             document.getElementById('loadingOverlay').classList.add('hidden');
         }
         
-        // แสดง Info Panel
-        function showInfoPanel(imageId) {
+        // แสดง Info
+        function showInfo(imageId, method, urls) {
             document.getElementById('imageIdDisplay').textContent = imageId;
+            document.getElementById('methodDisplay').textContent = method;
+            document.getElementById('urlList').innerHTML = 
+                '<strong>URLs ที่ทดสอบ:</strong><br>' + 
+                urls.map((u, i) => `${i+1}. ${u.name}`).join('<br>');
             document.getElementById('infoPanel').style.display = 'block';
         }
         
-        // โหลดภาพเป็น Base64 ผ่าน CORS Proxy
-        async function loadImageAsBase64(fileId) {
-            const imageUrls = [
-                `https://drive.google.com/thumbnail?id=${fileId}&sz=w4000`,
-                `https://lh3.googleusercontent.com/d/${fileId}=w4000`,
-                `https://drive.google.com/uc?export=view&id=${fileId}`
-            ];
-            
-            for (let i = 0; i < imageUrls.length; i++) {
+        // ลองโหลดภาพ
+        async function tryLoadImage(urls) {
+            for (let i = 0; i < urls.length; i++) {
+                const method = urls[i];
+                console.log(`🔍 ลอง: ${method.name} - ${method.url}`);
+                
                 try {
-                    updateLoadingStatus(`กำลังลองดาวน์โหลดภาพ (วิธีที่ ${i + 1}/${imageUrls.length})...`, 30 + (i * 20));
-                    
-                    // ใช้ CORS Proxy เพื่อดาวน์โหลดภาพ
-                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrls[i])}`;
-                    
-                    const response = await fetch(proxyUrl);
-                    
-                    if (!response.ok) {
-                        console.log(`❌ Failed to fetch from method ${i + 1}`);
-                        continue;
-                    }
-                    
-                    updateLoadingStatus('กำลังประมวลผลภาพ...', 70);
-                    
-                    const blob = await response.blob();
-                    
-                    // แปลง Blob เป็น Base64
-                    return new Promise((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                            updateLoadingStatus('เตรียมแสดงภาพ...', 90);
-                            resolve(reader.result);
-                        };
-                        reader.onerror = reject;
-                        reader.readAsDataURL(blob);
+                    const response = await fetch(method.url, {
+                        method: 'HEAD',
+                        mode: 'no-cors' // ไม่ตรวจสอบ CORS ใน HEAD request
                     });
                     
+                    // ถ้าไม่ error ให้ลองใช้ URL นี้
+                    return method;
+                    
                 } catch (error) {
-                    console.log(`❌ Error with method ${i + 1}:`, error);
+                    console.log(`❌ ล้มเหลว: ${method.name}`);
                 }
             }
             
-            throw new Error('ไม่สามารถโหลดภาพได้จากทุกวิธี');
+            // ถ้าทุกอันล้มเหลว ให้ใช้อันแรก (Thumbnail API มักใช้ได้)
+            return urls[0];
         }
         
         // สร้าง Viewer
-        function createViewer(base64Image) {
-            updateLoadingStatus('กำลังสร้าง 360° viewer...', 95);
-            
+        async function createViewer(imageUrl, corsMode = 'anonymous') {
             try {
-                const viewer = pannellum.viewer('panorama', {
-                    "type": "equirectangular",
-                    "panorama": base64Image, // ใช้ Base64 แทน URL
-                    "autoLoad": true,
-                    "autoRotate": -2,
-                    "showControls": true,
-                    "showFullscreenCtrl": true,
-                    "showZoomCtrl": true,
-                    "mouseZoom": true,
-                    "compass": true,
-                    "orientationOnByDefault": true,
-                    "draggable": true,
-                    "disableKeyboardCtrl": false,
-                    "pitch": 0,
-                    "yaw": 0,
-                    "hfov": 100,
-                    "minHfov": 50,
-                    "maxHfov": 120,
-                    "strings": {
-                        "loadButtonLabel": "คลิกเพื่อโหลดภาพ",
-                        "loadingLabel": "กำลังโหลด...",
-                        "noPanoramaError": "ไม่พบภาพ 360°",
-                        "fileAccessError": "ไม่สามารถเข้าถึงไฟล์ได้",
-                        "malformedURLError": "URL ไม่ถูกต้อง",
-                        "genericWebGLError": "ไม่สามารถใช้งาน WebGL ได้"
+                const viewer = new Viewer({
+                    container: document.getElementById('viewer'),
+                    panorama: imageUrl,
+                    
+                    // การตั้งค่า
+                    navbar: [
+                        'autorotate',
+                        'zoom',
+                        'fullscreen'
+                    ],
+                    
+                    defaultZoomLvl: 50,
+                    fisheye: false,
+                    
+                    // Auto rotate
+                    autorotateDelay: 2000,
+                    autorotateSpeed: '2rpm',
+                    
+                    // Mobile
+                    touchmoveTwoFingers: false,
+                    mousemove: true,
+                    
+                    // Gyroscope
+                    moveInertia: true,
+                    
+                    // CORS
+                    requestHeaders: corsMode === 'use-credentials' ? {
+                        'credentials': 'include'
+                    } : {},
+                    
+                    // Plugins
+                    loadingImg: null,
+                    loadingTxt: 'กำลังโหลด...',
+                    
+                    // Error handling
+                    onReady: () => {
+                        console.log('✅ Viewer พร้อมใช้งาน');
+                        hideLoading();
                     }
                 });
                 
-                // Event: โหลดสำเร็จ
-                viewer.on('load', function() {
-                    updateLoadingStatus('เสร็จสิ้น!', 100);
-                    setTimeout(() => {
-                        hideLoading();
-                    }, 300);
-                    console.log('✅ โหลดภาพ 360° สำเร็จ');
+                viewer.addEventListener('ready', () => {
+                    console.log('✅ โหลดภาพสำเร็จ');
+                    hideLoading();
                 });
                 
-                // Event: เกิด error
-                viewer.on('error', function(err) {
-                    console.error('❌ Pannellum Error:', err);
-                    showError('ไม่สามารถแสดงภาพ 360° ได้\n\nกรุณาตรวจสอบว่าไฟล์เป็นภาพ 360° (Equirectangular) และลองใหม่อีกครั้ง');
-                });
+                return viewer;
                 
-            } catch (err) {
-                console.error('❌ Error creating viewer:', err);
-                showError('เกิดข้อผิดพลาดในการสร้าง viewer: ' + err.message);
+            } catch (error) {
+                console.error('❌ Error:', error);
+                throw error;
             }
         }
         
-        // เริ่มต้น 360° Viewer
-        async function init360Viewer() {
+        // เริ่มต้น
+        async function init() {
             const imageId = getImageIdFromUrl();
             
             if (!imageId) {
-                showError('ไม่พบ Image ID\n\nกรุณาระบุ ?id=YOUR_IMAGE_ID ใน URL\n\nตัวอย่าง:\nhttps://your-site.github.io/?id=1ABC123XYZ');
+                showError(`
+                    <strong>ไม่พบ Image ID</strong><br><br>
+                    กรุณาเพิ่ม ?id=YOUR_IMAGE_ID ใน URL<br><br>
+                    <strong>ตัวอย่าง:</strong><br>
+                    https://yoursite.github.io/?id=1ABC123XYZ
+                `);
                 return;
             }
             
             console.log('🎯 Image ID:', imageId);
-            showInfoPanel(imageId);
+            
+            const urls = getImageUrls(imageId);
             
             try {
-                updateLoadingStatus('เริ่มต้นโหลดภาพ...', 10);
+                // หาวิธีที่ดีที่สุด
+                const bestMethod = await tryLoadImage(urls);
+                console.log(`✅ ใช้: ${bestMethod.name}`);
                 
-                // โหลดภาพเป็น Base64
-                const base64Image = await loadImageAsBase64(imageId);
+                showInfo(imageId, bestMethod.name, urls);
                 
-                console.log('✅ ดาวน์โหลดภาพสำเร็จ');
-                
-                // สร้าง Viewer ด้วย Base64
-                createViewer(base64Image);
+                // สร้าง Viewer
+                await createViewer(bestMethod.url, bestMethod.cors);
                 
             } catch (error) {
-                console.error('❌ Error:', error);
-                showError(
-                    'ไม่สามารถโหลดภาพได้\n\n' +
-                    'กรุณาตรวจสอบ:\n' +
-                    '1. Image ID ถูกต้อง\n' +
-                    '2. ไฟล์ใน Google Drive แชร์เป็น "Anyone with the link"\n' +
-                    '3. ไฟล์เป็นภาพ (JPG, PNG)\n' +
-                    '4. มีการเชื่อมต่ออินเทอร์เน็ต\n\n' +
-                    'Error: ' + error.message
-                );
+                console.error('❌ ข้อผิดพลาด:', error);
+                showError(`
+                    <strong>ไม่สามารถโหลดภาพได้</strong><br><br>
+                    <strong>กรุณาตรวจสอบ:</strong><br>
+                    1. Image ID ถูกต้อง: <code>${imageId}</code><br>
+                    2. ไฟล์ใน Google Drive แชร์เป็น "Anyone with the link"<br>
+                    3. ไฟล์เป็นภาพ 360° (Equirectangular)<br><br>
+                    <strong>ลองเปิด URL เหล่านี้:</strong><br>
+                    ${urls.map((u, i) => `
+                        ${i+1}. <a href="${u.url}" target="_blank">${u.name}</a><br>
+                    `).join('')}
+                    <br>
+                    <strong>Error:</strong> ${error.message}
+                `);
             }
         }
         
-        // รันเมื่อโหลดหน้าเว็บเสร็จ
-        window.addEventListener('load', function() {
-            init360Viewer();
-        });
+        // รันเมื่อโหลดหน้าเสร็จ
+        window.addEventListener('load', init);
     </script>
 </body>
 </html>
